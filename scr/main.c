@@ -11,11 +11,10 @@
 #include "py32f0xx_hal.h"
 #include <stdio.h>
 
-/* 系统时钟参数（PY32F003标准24MHz HSI） */
-#define SYS_HCLK        24000000UL
-#define TIM_PSC         23U        // 24M/(23+1)=1MHz，1us计数刻度
-#define TIM_CLK_FREQ    (SYS_HCLK / (TIM_PSC + 1UL))
-
+/* 系统时钟参数（PY32F003最高速率32MHz HSI） */
+#define SYS_HCLK        32000000UL
+#define TIM_PSC         3U        // 32/(3+1)=8MHz，125ns计数刻度
+#define TIM_CNT_CLK     (SYS_HCLK / (TIM_PSC + 1UL)) // 8000000UL
 /* TIM1 PWM1测量数据 */
 uint32_t pwm1_period = 0;
 uint32_t pwm1_high   = 0;
@@ -38,7 +37,7 @@ UART_HandleTypeDef huart1;
 /* 10ms打印计时缓存 */
 uint32_t print_tick_last = 0;
 
-// 系统时钟初始化（24MHz HSI）
+// 系统时钟初始化（32MHz HSI）
 static void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -46,7 +45,8 @@ static void SystemClock_Config(void)
 
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_24MHZ;
+  // 校准值切换为32MHz
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_32MHZ;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -60,11 +60,13 @@ static void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
+  // 32MHz无需Flash等待周期
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
   {
     Error_Handler();
   }
 }
+
 
 // GPIO初始化（PA2/PA3捕获输入、PB6/PB7串口)
 static void MX_GPIO_Init(void)
@@ -246,7 +248,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
     {
       pwm1_period = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-      pwm1_freq = (float)TIM_CLK_FREQ / pwm1_period;
+      pwm1_freq = (float)TIM_CNT_CLK / pwm1_period;
     }
     else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
     {
@@ -263,7 +265,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1)
     {
       pwm2_period = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
-      pwm2_freq = (float)TIM_CLK_FREQ / pwm2_period;
+      pwm2_freq = (float)TIM_CNT_CLK / pwm2_period;
     }
     else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2)
     {
@@ -275,6 +277,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     }
   }
 }
+
 
 // 主函数（SysTick 10ms非阻塞打印）
 int main(void)
